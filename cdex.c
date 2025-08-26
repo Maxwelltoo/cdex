@@ -42,19 +42,19 @@ static const cdex_descriptor_t g_descriptor_templates[DESCRIPTOR_COUNT] = {
 };
 
 static cdex_data_type_t str_to_type(const char* str, size_t* size) {
-    if (strcmp(str, "u8") == 0) { *size = 1; return CDE_TYPE_U8; }
-    if (strcmp(str, "i8") == 0) { *size = 1; return CDE_TYPE_I8; }
-    if (strcmp(str, "u16") == 0) { *size = 2; return CDE_TYPE_U16; }
-    if (strcmp(str, "i16") == 0) { *size = 2; return CDE_TYPE_I16; }
-    if (strcmp(str, "u32") == 0) { *size = 4; return CDE_TYPE_U32; }
-    if (strcmp(str, "i32") == 0) { *size = 4; return CDE_TYPE_I32; }
-    if (strcmp(str, "u64") == 0) { *size = 8; return CDE_TYPE_U64; }
-    if (strcmp(str, "i64") == 0) { *size = 8; return CDE_TYPE_I64; }
-    if (strcmp(str, "f32") == 0) { *size = 4; return CDE_TYPE_F32; }
-    if (strcmp(str, "d64") == 0) { *size = 8; return CDE_TYPE_D64; }
-    if (strcmp(str, "str") == 0) { *size = 0; return CDE_TYPE_STR; } // Size is variable
+    if (strcmp(str, "u8") == 0) { *size = 1; return CDEX_TYPE_U8; }
+    if (strcmp(str, "i8") == 0) { *size = 1; return CDEX_TYPE_I8; }
+    if (strcmp(str, "u16") == 0) { *size = 2; return CDEX_TYPE_U16; }
+    if (strcmp(str, "i16") == 0) { *size = 2; return CDEX_TYPE_I16; }
+    if (strcmp(str, "u32") == 0) { *size = 4; return CDEX_TYPE_U32; }
+    if (strcmp(str, "i32") == 0) { *size = 4; return CDEX_TYPE_I32; }
+    if (strcmp(str, "u64") == 0) { *size = 8; return CDEX_TYPE_U64; }
+    if (strcmp(str, "i64") == 0) { *size = 8; return CDEX_TYPE_I64; }
+    if (strcmp(str, "f32") == 0) { *size = 4; return CDEX_TYPE_F32; }
+    if (strcmp(str, "d64") == 0) { *size = 8; return CDEX_TYPE_D64; }
+    if (strcmp(str, "str") == 0) { *size = 0; return CDEX_TYPE_STR; } // Size is variable
     *size = 0;
-    return CDE_TYPE_UNKNOWN;
+    return CDEX_TYPE_UNKNOWN;
 }
 
 void cdex_manager_init(void) {
@@ -71,7 +71,7 @@ void cdex_manager_init(void) {
 
         char* segment = strtok(str_copy, ",");
         int field_idx = 0;
-        while (segment != NULL && field_idx < CDE_MAX_FIELDS) {
+        while (segment != NULL && field_idx < CDEX_MAX_FIELDS) {
             char* hyphen = strrchr(segment, '-');
             if (hyphen) {
                 *hyphen = '\0'; // Split name and type
@@ -97,6 +97,113 @@ const cdex_descriptor_t* cdex_get_descriptor_by_id(uint16_t id) {
         }
     }
     return NULL;
+}
+
+static int count_set_bits_before(uint64_t n, int index) {
+    int count = 0;
+    for (int i = 0; i < index; i++) {
+        if ((n >> i) & 1) {
+            count++;
+        }
+    }
+    return count;
+}
+
+void cdex_packet_init(cdex_packet_t* packet, uint16_t descriptor_id) {
+    if (!packet) return;
+    memset(packet, 0, sizeof(cdex_packet_t));
+    packet->descriptor_id = descriptor_id;
+}
+
+cdex_status_t cdex_packet_push(cdex_packet_t* packet, int field_index, cdex_value_t value) {
+    if (!packet) return CDEX_ERROR_INVALID_DATA;
+    if (field_index < 0 || field_index >= CDEX_MAX_FIELDS) return CDEX_ERROR_INDEX_OUT_OF_BOUNDS;
+
+    const cdex_descriptor_t* desc = cdex_get_descriptor_by_id(packet->descriptor_id);
+    if (!desc) return CDEX_ERROR_DESCRIPTOR_NOT_FOUND;
+    if (field_index >= desc->field_count) return CDEX_ERROR_INDEX_OUT_OF_BOUNDS;
+
+    int insertion_index = count_set_bits_before(packet->bitmap, field_index);
+    bool already_exists = (packet->bitmap >> field_index) & 1;
+
+    if (already_exists) {
+        // 字段已存在，直接覆盖值
+        packet->values[insertion_index] = value;
+    } else {
+        // 字段不存在，需要插入
+        if (packet->data_count >= CDEX_MAX_FIELDS) return CDEX_ERROR_PACKET_FULL;
+
+        // 为新元素腾出空间，将插入点之后的所有元素向后移动一位
+        memmove(&packet->values[insertion_index + 1], 
+                &packet->values[insertion_index], 
+                (packet->data_count - insertion_index) * sizeof(cdex_value_t));
+
+        // 插入新值
+        packet->values[insertion_index] = value;
+        
+        // 更新 bitmap 和计数
+        packet->bitmap |= (1ULL << field_index);
+        packet->data_count++;
+    }
+
+    return CDEX_SUCCESS;
+}
+
+cdex_status_t cdex_packet_pop(cdex_packet_t* packet, int field_index) {
+    if (!packet) return CDEX_ERROR_INVALID_DATA;
+    if (field_index < 0 || field_index >= CDEX_MAX_FIELDS) return CDEX_ERROR_INDEX_OUT_OF_BOUNDS;
+
+    bool exists = (packet->bitmap >> field_index) & 1;
+    if (!exists) {
+        // 字段不存在，无需操作
+        return CDEX_SUCCESS;
+    }
+
+    int removal_index = count_set_bits_before(packet->bitmap, field_index);
+
+    // 将移除点之后的所有元素向前移动一位，覆盖被删除的元素
+    memmove(&packet->values[removal_index], 
+            &packet->values[removal_index + 1], 
+            (packet->data_count - removal_index - 1) * sizeof(cdex_value_t));
+
+    // 更新 bitmap 和计数
+    packet->bitmap &= ~(1ULL << field_index);
+    packet->data_count--;
+
+    return CDEX_SUCCESS;
+}
+
+int cdex_packet_calculate_packed_size(const cdex_packet_t* packet) {
+    if (!packet) return -1;
+    const cdex_descriptor_t* desc = cdex_get_descriptor_by_id(packet->descriptor_id);
+    if (!desc) return -1;
+
+    // 基础开销: ID (2) + Checksum (2)
+    int total_size = 4;
+
+    // Bitmap 开销
+    total_size += (desc->field_count + 7) / 8;
+
+    // Data List 开销
+    int data_idx = 0;
+    for (int i = 0; i < desc->field_count; ++i) {
+        if ((packet->bitmap >> i) & 1) {
+            const cdex_field_descriptor_t* field_desc = &desc->fields[i];
+            const cdex_value_t* value = &packet->values[data_idx];
+
+            switch (field_desc->type) {
+                case CDEX_TYPE_STR:
+                    total_size += strlen(value->str) + 1; // +1 for null terminator
+                    break;
+                default: // 所有固定大小类型
+                    total_size += field_desc->size;
+                    break;
+            }
+            data_idx++;
+        }
+    }
+
+    return total_size;
 }
 
 // --- 核心功能实现 ---
@@ -127,7 +234,7 @@ int cdex_pack(const cdex_packet_t* packet, uint8_t* buffer, size_t buffer_size) 
             const cdex_field_descriptor_t* field_desc = &desc->fields[i];
             const cdex_value_t* value = &packet->values[data_idx];
             
-            if (field_desc->type == CDE_TYPE_STR) {
+            if (field_desc->type == CDEX_TYPE_STR) {
                 size_t str_len = strlen(value->str) + 1; // +1 for null terminator
                 if (ptr + str_len > buffer + buffer_size) return -1;
                 memcpy(ptr, value->str, str_len);
@@ -153,12 +260,12 @@ int cdex_pack(const cdex_packet_t* packet, uint8_t* buffer, size_t buffer_size) 
 
 
 cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t* packet_out) {
-    if (buffer_len < 5) return CDE_ERROR_INVALID_PACKET; // 至少 ID(2) + Bitmap(1) + CRC(2)
+    if (buffer_len < 5) return CDEX_ERROR_INVALID_PACKET; // 至少 ID(2) + Bitmap(1) + CRC(2)
 
     // 1. 校验Checksum
     uint16_t received_crc = *(uint16_t*)(buffer + buffer_len - 2);
     uint16_t calculated_crc = calculate_crc16(buffer, buffer_len - 2);
-    if (received_crc != calculated_crc) return CDE_ERROR_BAD_CHECKSUM;
+    if (received_crc != calculated_crc) return CDEX_ERROR_BAD_CHECKSUM;
 
     memset(packet_out, 0, sizeof(cdex_packet_t));
     const uint8_t* ptr = buffer;
@@ -168,11 +275,11 @@ cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t
     ptr += 2;
 
     const cdex_descriptor_t* desc = cdex_get_descriptor_by_id(packet_out->descriptor_id);
-    if (!desc) return CDE_ERROR_DESCRIPTOR_NOT_FOUND;
+    if (!desc) return CDEX_ERROR_DESCRIPTOR_NOT_FOUND;
 
     // 3. 解析Bitmap
     size_t bitmap_bytes = (desc->field_count + 7) / 8;
-    if (ptr + bitmap_bytes > buffer + buffer_len - 2) return CDE_ERROR_INVALID_PACKET;
+    if (ptr + bitmap_bytes > buffer + buffer_len - 2) return CDEX_ERROR_INVALID_PACKET;
     memcpy(&packet_out->bitmap, ptr, bitmap_bytes);
     ptr += bitmap_bytes;
 
@@ -183,19 +290,19 @@ cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t
             const cdex_field_descriptor_t* field_desc = &desc->fields[i];
             cdex_value_t* value_out = &packet_out->values[data_idx];
 
-            if (field_desc->type == CDE_TYPE_STR) {
+            if (field_desc->type == CDEX_TYPE_STR) {
                 const char* str_start = (const char*)ptr;
                 size_t max_len = (buffer + buffer_len - 2) - ptr;
                 size_t str_len = strnlen(str_start, max_len);
 
-                if (str_len == max_len) return CDE_ERROR_INVALID_DATA; // No null terminator found
+                if (str_len == max_len) return CDEX_ERROR_INVALID_DATA; // No null terminator found
 
                 value_out->str = (char*)malloc(str_len + 1);
-                if (!value_out->str) return CDE_ERROR_MEMORY_ALLOCATION;
+                if (!value_out->str) return CDEX_ERROR_MEMORY_ALLOCATION;
                 memcpy(value_out->str, str_start, str_len + 1);
                 ptr += str_len + 1;
             } else {
-                if (ptr + field_desc->size > buffer + buffer_len - 2) return CDE_ERROR_INVALID_PACKET;
+                if (ptr + field_desc->size > buffer + buffer_len - 2) return CDEX_ERROR_INVALID_PACKET;
                 memcpy(value_out, ptr, field_desc->size);
                 ptr += field_desc->size;
             }
@@ -204,7 +311,7 @@ cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t
     }
     packet_out->data_count = data_idx;
 
-    return CDE_SUCCESS;
+    return CDEX_SUCCESS;
 }
 
 cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
@@ -224,17 +331,17 @@ cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
             const cdex_value_t* value = &packet->values[data_idx];
             
             switch (field_desc->type) {
-                case CDE_TYPE_U8:  cJSON_AddNumberToObject(root, field_desc->name, value->u8); break;
-                case CDE_TYPE_I8:  cJSON_AddNumberToObject(root, field_desc->name, value->i8); break;
-                case CDE_TYPE_U16: cJSON_AddNumberToObject(root, field_desc->name, value->u16); break;
-                case CDE_TYPE_I16: cJSON_AddNumberToObject(root, field_desc->name, value->i16); break;
-                case CDE_TYPE_U32: cJSON_AddNumberToObject(root, field_desc->name, value->u32); break;
-                case CDE_TYPE_I32: cJSON_AddNumberToObject(root, field_desc->name, value->i32); break;
-                case CDE_TYPE_U64: cJSON_AddNumberToObject(root, field_desc->name, (double)value->u64); break;
-                case CDE_TYPE_I64: cJSON_AddNumberToObject(root, field_desc->name, (double)value->i64); break;
-                case CDE_TYPE_F32: cJSON_AddNumberToObject(root, field_desc->name, value->f32); break;
-                case CDE_TYPE_D64: cJSON_AddNumberToObject(root, field_desc->name, value->d64); break;
-                case CDE_TYPE_STR: cJSON_AddStringToObject(root, field_desc->name, value->str); break;
+                case CDEX_TYPE_U8:  cJSON_AddNumberToObject(root, field_desc->name, value->u8); break;
+                case CDEX_TYPE_I8:  cJSON_AddNumberToObject(root, field_desc->name, value->i8); break;
+                case CDEX_TYPE_U16: cJSON_AddNumberToObject(root, field_desc->name, value->u16); break;
+                case CDEX_TYPE_I16: cJSON_AddNumberToObject(root, field_desc->name, value->i16); break;
+                case CDEX_TYPE_U32: cJSON_AddNumberToObject(root, field_desc->name, value->u32); break;
+                case CDEX_TYPE_I32: cJSON_AddNumberToObject(root, field_desc->name, value->i32); break;
+                case CDEX_TYPE_U64: cJSON_AddNumberToObject(root, field_desc->name, (double)value->u64); break;
+                case CDEX_TYPE_I64: cJSON_AddNumberToObject(root, field_desc->name, (double)value->i64); break;
+                case CDEX_TYPE_F32: cJSON_AddNumberToObject(root, field_desc->name, value->f32); break;
+                case CDEX_TYPE_D64: cJSON_AddNumberToObject(root, field_desc->name, value->d64); break;
+                case CDEX_TYPE_STR: cJSON_AddStringToObject(root, field_desc->name, value->str); break;
                 default: break;
             }
             data_idx++;
@@ -250,7 +357,7 @@ void cdex_free_packet_strings(cdex_packet_t* packet) {
     int data_idx = 0;
     for (int i = 0; i < desc->field_count; ++i) {
         if ((packet->bitmap >> i) & 1) {
-            if (desc->fields[i].type == CDE_TYPE_STR) {
+            if (desc->fields[i].type == CDEX_TYPE_STR) {
                 if (packet->values[data_idx].str) {
                     free(packet->values[data_idx].str);
                     packet->values[data_idx].str = NULL;

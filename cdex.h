@@ -108,6 +108,37 @@ cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t
 cJSON* cdex_packet_to_json(const cdex_packet_t* packet);
 
 /**
+ * @brief 初始化一个 CDE 数据包结构体
+ * @param packet 指向要初始化的数据包
+ * @param descriptor_id 该数据包将使用的描述符ID
+ */
+void cde_packet_init(cde_packet_t* packet, uint16_t descriptor_id);
+
+/**
+ * @brief 向数据包中添加或更新一个字段
+ * @param packet 指向目标数据包
+ * @param field_index 要添加的字段在其描述符中的索引 (0-63)
+ * @param value 要添加的数据值
+ * @return 状态码 (CDE_SUCCESS 表示成功)
+ */
+cde_status_t cde_packet_push(cde_packet_t* packet, int field_index, cde_value_t value);
+
+/**
+ * @brief 从数据包中移除一个字段
+ * @param packet 指向目标数据包
+ * @param field_index 要移除的字段在其描述符中的索引 (0-63)
+ * @return 状态码 (CDE_SUCCESS 表示成功)
+ */
+cde_status_t cde_packet_pop(cde_packet_t* packet, int field_index);
+
+/**
+ * @brief 计算当前数据包打包后所需的字节数
+ * @param packet 指向要计算的数据包
+ * @return 成功则返回预估的字节数，失败返回-1
+ */
+int cde_packet_calculate_packed_size(const cde_packet_t* packet);
+
+/**
  * @brief 释放由 cdex_parse 动态分配的字符串内存
  * @param packet 指向已解析的数据包
  */
