@@ -34,9 +34,52 @@ static cdex_data_type_t str_to_type(const char* str, size_t* size) {
     if (strcmp(str, "i64") == 0) { *size = 8; return CDEX_TYPE_I64; }
     if (strcmp(str, "f32") == 0) { *size = 4; return CDEX_TYPE_F32; }
     if (strcmp(str, "d64") == 0) { *size = 8; return CDEX_TYPE_D64; }
-    if (strcmp(str, "str") == 0) { *size = 0; return CDEX_TYPE_STR; } // Size is variable
+    // variable-sized types
     *size = 0;
+    if (strcmp(str, "num") == 0) { return CDEX_TYPE_NUM; }
+    if (strcmp(str, "bin") == 0) { return CDEX_TYPE_BIN; }
+    if (strcmp(str, "str") == 0) { return CDEX_TYPE_STR; }
     return CDEX_TYPE_UNKNOWN;
+}
+
+static uint64_t zigzag_encode_64(int64_t n) { return (n << 1) ^ (n >> 63); }
+
+static int64_t zigzag_decode_64(uint64_t n) { return (n >> 1) ^ (-(int64_t)(n & 1)); }
+
+/**
+ * @brief 将 uint64_t 编码为 Varint 格式写入缓冲区
+ * @return 写入的字节数
+ */
+static int encode_varint(uint8_t* buffer, uint64_t value) {
+    int count = 0;
+    while (value >= 0x80) {
+        buffer[count++] = (uint8_t)(value | 0x80);
+        value >>= 7;
+    }
+    buffer[count++] = (uint8_t)value;
+    return count;
+}
+
+/**
+ * @brief 从缓冲区解码 Varint 为 uint64_t
+ * @param decoded_len [out] 解码所用的字节数
+ * @return 解码后的值
+ */
+static uint64_t decode_varint(const uint8_t* buffer, int* decoded_len) {
+    uint64_t value = 0;
+    int shift = 0;
+    int i = 0;
+    while (1) {
+        uint8_t byte = buffer[i];
+        value |= (uint64_t)(byte & 0x7F) << shift;
+        if ((byte & 0x80) == 0) {
+            break;
+        }
+        shift += 7;
+        i++;
+    }
+    *decoded_len = i + 1;
+    return value;
 }
 
 // --- 描述符管理 ---
@@ -225,12 +268,19 @@ int cdex_packet_calculate_packed_size(const cdex_packet_t* packet) {
         if ((packet->bitmap >> i) & 1) {
             const cdex_field_t* field_desc = &desc->fields[i];
             const cdex_value_t* value = &packet->values[data_idx];
+            uint8_t varint_buffer[10];
 
             switch (field_desc->type) {
                 case CDEX_TYPE_STR:
                     total_size += strlen(value->str) + 1; // +1 for null terminator
                     break;
-                default: // 所有固定大小类型
+                case CDEX_TYPE_BIN:
+                    total_size += value->bin[0] + 1; // +1 for length byte
+                    break;
+                case CDEX_TYPE_NUM:
+                    total_size += encode_varint(varint_buffer, zigzag_encode_64(value->i64));
+                    break;
+                default:
                     total_size += field_desc->size;
                     break;
             }
@@ -274,6 +324,16 @@ int cdex_pack(const cdex_packet_t* packet, uint8_t* buffer, size_t buffer_size) 
                 if (ptr + str_len > buffer + buffer_size) return -1;
                 memcpy(ptr, value->str, str_len);
                 ptr += str_len;
+            } else if (field_desc->type == CDEX_TYPE_BIN) {
+                if (ptr + value->bin[0] + 1 > buffer + buffer_size) return -1;
+                memcpy(ptr, value->bin, value->bin[0] + 1);
+                ptr += value->bin[0] + 1;
+            } else if (field_desc->type == CDEX_TYPE_NUM) {
+                uint8_t varint_buffer[10];
+                int varint_size = encode_varint(varint_buffer, zigzag_encode_64(value->i64));
+                if (ptr + varint_size > buffer + buffer_size) return -1;
+                memcpy(ptr, varint_buffer, varint_size);
+                ptr += varint_size;
             } else {
                 if (ptr + field_desc->size > buffer + buffer_size) return -1;
                 memcpy(ptr, value, field_desc->size);
@@ -336,8 +396,24 @@ cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t
                 if (!value_out->str) return CDEX_ERROR_MEMORY_ALLOCATION;
                 memcpy(value_out->str, str_start, str_len + 1);
                 ptr += str_len + 1;
+            } else if (field_desc->type == CDEX_TYPE_BIN) {
+                if (ptr + 1 > buffer + buffer_len - 2) return CDEX_ERROR_BUFFER_TOO_SMALL;
+                size_t bin_len = ptr[0];
+                if (ptr + 1 + bin_len > buffer + buffer_len - 2) return CDEX_ERROR_BUFFER_TOO_SMALL;
+
+                value_out->bin = (uint8_t*)malloc(bin_len + 1);
+                if (!value_out->bin) return CDEX_ERROR_MEMORY_ALLOCATION;
+                memcpy(value_out->bin, ptr, bin_len + 1);
+                ptr += bin_len + 1;
+            } else if (field_desc->type == CDEX_TYPE_NUM) {
+                int varint_size = 0;
+                uint64_t decoded = decode_varint(ptr, &varint_size);
+                if (ptr + varint_size > buffer + buffer_len - 2) return CDEX_ERROR_BUFFER_TOO_SMALL;
+
+                value_out->i64 = zigzag_decode_64(decoded);
+                ptr += varint_size;
             } else {
-                if (ptr + field_desc->size > buffer + buffer_len - 2) return CDEX_ERROR_INVALID_PACKET;
+                if (ptr + field_desc->size > buffer + buffer_len - 2) return CDEX_ERROR_BUFFER_TOO_SMALL;
                 memcpy(value_out, ptr, field_desc->size);
                 ptr += field_desc->size;
             }
@@ -375,9 +451,18 @@ cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
                 case CDEX_TYPE_I32: cJSON_AddNumberToObject(root, field_desc->name, value->i32); break;
                 case CDEX_TYPE_U64: cJSON_AddNumberToObject(root, field_desc->name, (double)value->u64); break;
                 case CDEX_TYPE_I64: cJSON_AddNumberToObject(root, field_desc->name, (double)value->i64); break;
+                case CDEX_TYPE_NUM: cJSON_AddNumberToObject(root, field_desc->name, (double)value->i64); break;
                 case CDEX_TYPE_F32: cJSON_AddNumberToObject(root, field_desc->name, value->f32); break;
                 case CDEX_TYPE_D64: cJSON_AddNumberToObject(root, field_desc->name, value->d64); break;
                 case CDEX_TYPE_STR: cJSON_AddStringToObject(root, field_desc->name, value->str); break;
+                case CDEX_TYPE_BIN: {
+                    cJSON* bin_array = cJSON_CreateArray();
+                    for (size_t j = 1; j <= value->bin[0]; ++j) { // value->bin[0] is length
+                        cJSON_AddItemToArray(bin_array, cJSON_CreateNumber(value->bin[j]));
+                    }
+                    cJSON_AddItemToObject(root, field_desc->name, bin_array);
+                    break;
+                }
                 default: break;
             }
             data_idx++;
@@ -387,7 +472,7 @@ cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
 }
 #endif
 
-void cdex_free_packet_strings(cdex_packet_t* packet) {
+void cdex_free_packet_memory(cdex_packet_t* packet) {
     const cdex_descriptor_t* desc = cdex_get_descriptor_by_id(packet->descriptor_id);
     if (!desc) return;
 
@@ -398,6 +483,12 @@ void cdex_free_packet_strings(cdex_packet_t* packet) {
                 if (packet->values[data_idx].str) {
                     free(packet->values[data_idx].str);
                     packet->values[data_idx].str = NULL;
+                }
+            }
+            if (desc->fields[i].type == CDEX_TYPE_BIN) {
+                if (packet->values[data_idx].bin) {
+                    free(packet->values[data_idx].bin);
+                    packet->values[data_idx].bin = NULL;
                 }
             }
             data_idx++;

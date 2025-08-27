@@ -16,7 +16,9 @@ typedef enum {
     CDEX_TYPE_U16, CDEX_TYPE_I16,
     CDEX_TYPE_U32, CDEX_TYPE_I32,
     CDEX_TYPE_U64, CDEX_TYPE_I64,
+    CDEX_TYPE_NUM, // varint
     CDEX_TYPE_F32, CDEX_TYPE_D64,
+    CDEX_TYPE_BIN,
     CDEX_TYPE_STR,
     CDEX_TYPE_UNKNOWN
 } cdex_data_type_t;
@@ -30,10 +32,12 @@ typedef union {
     uint32_t u32;
     int32_t i32;
     uint64_t u64;
-    int64_t i64;
+    int64_t i64;  // varint will use this
     float f32;
     double d64;
-    char* str; // 注意：解析时会动态分配内存，需手动释放
+    /* Dynamic: MUST call cdex_free_packet_memory() to release */
+    char* str;    // end with '\0'
+    uint8_t* bin; // first byte for length
 } cdex_value_t;
 
 /**
@@ -179,9 +183,9 @@ cdex_status_t cdex_packet_pop(cdex_packet_t* packet, int field_index);
 int cdex_packet_calculate_packed_size(const cdex_packet_t* packet);
 
 /**
- * @brief 释放由 cdex_parse 动态分配的字符串内存
+ * @brief 释放由 cdex_parse 动态分配的内存
  * @param packet 指向已解析的数据包
  */
-void cdex_free_packet_strings(cdex_packet_t* packet);
+void cdex_free_packet_memory(cdex_packet_t* packet);
 
 #endif // CDEX_PROTOCOL_H
