@@ -314,6 +314,7 @@ cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t
     return CDEX_SUCCESS;
 }
 
+#ifdef CDEX_PARSE_TO_JSON
 cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
     const cdex_descriptor_t* desc = cdex_get_descriptor_by_id(packet->descriptor_id);
     if (!desc) return NULL;
@@ -349,6 +350,7 @@ cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
     }
     return root;
 }
+#endif
 
 void cdex_free_packet_strings(cdex_packet_t* packet) {
     const cdex_descriptor_t* desc = cdex_get_descriptor_by_id(packet->descriptor_id);

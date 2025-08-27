@@ -6,6 +6,7 @@
 #include "cjson/cJSON.h"
 
 #define CDEX_MAX_FIELDS 64
+#define CDEX_FIELD_NAME_LEN 32
 
 // 数据类型枚举
 typedef enum {
@@ -33,17 +34,21 @@ typedef union {
     char* str; // 注意：解析时会动态分配内存，需手动释放
 } cdex_value_t;
 
-// 单个字段的描述信息
+/**
+ * @brief 单个字段的描述信息
+ */
 typedef struct {
-    char name[32]; // 字段名 (JSON Key)
-    cdex_data_type_t type; // 数据类型
-    size_t size; // 数据类型的字节大小
+    char name[CDEX_FIELD_NAME_LEN];
+    cdex_data_type_t type;
+    size_t size;
 } cdex_field_descriptor_t;
 
-// 完整的描述符信息
+/**
+ * @brief 完整的 CDEX 描述符信息
+ */
 typedef struct {
     uint16_t id;
-    const char* raw_string;
+    char* raw_string;
     int field_count;
     cdex_field_descriptor_t fields[CDEX_MAX_FIELDS];
 } cdex_descriptor_t;
@@ -100,43 +105,45 @@ int cdex_pack(const cdex_packet_t* packet, uint8_t* buffer, size_t buffer_size);
  */
 cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t* packet_out);
 
+#ifdef CDEX_PARSE_TO_JSON
 /**
  * @brief 将解析后的 cdex_packet_t 转换为 cJSON 对象
  * @param packet 指向已解析的数据包
  * @return 成功则返回 cJSON 对象根节点，失败返回 NULL。调用者需负责释放返回的cJSON对象。
  */
 cJSON* cdex_packet_to_json(const cdex_packet_t* packet);
+#endif
 
 /**
- * @brief 初始化一个 CDE 数据包结构体
+ * @brief 初始化一个 CDEX 数据包结构体
  * @param packet 指向要初始化的数据包
  * @param descriptor_id 该数据包将使用的描述符ID
  */
-void cde_packet_init(cde_packet_t* packet, uint16_t descriptor_id);
+void cdex_packet_init(cdex_packet_t* packet, uint16_t descriptor_id);
 
 /**
  * @brief 向数据包中添加或更新一个字段
  * @param packet 指向目标数据包
  * @param field_index 要添加的字段在其描述符中的索引 (0-63)
  * @param value 要添加的数据值
- * @return 状态码 (CDE_SUCCESS 表示成功)
+ * @return 状态码 (CDEX_SUCCESS 表示成功)
  */
-cde_status_t cde_packet_push(cde_packet_t* packet, int field_index, cde_value_t value);
+cdex_status_t cdex_packet_push(cdex_packet_t* packet, int field_index, cdex_value_t value);
 
 /**
  * @brief 从数据包中移除一个字段
  * @param packet 指向目标数据包
  * @param field_index 要移除的字段在其描述符中的索引 (0-63)
- * @return 状态码 (CDE_SUCCESS 表示成功)
+ * @return 状态码 (CDEX_SUCCESS 表示成功)
  */
-cde_status_t cde_packet_pop(cde_packet_t* packet, int field_index);
+cdex_status_t cdex_packet_pop(cdex_packet_t* packet, int field_index);
 
 /**
  * @brief 计算当前数据包打包后所需的字节数
  * @param packet 指向要计算的数据包
  * @return 成功则返回预估的字节数，失败返回-1
  */
-int cde_packet_calculate_packed_size(const cde_packet_t* packet);
+int cdex_packet_calculate_packed_size(const cdex_packet_t* packet);
 
 /**
  * @brief 释放由 cdex_parse 动态分配的字符串内存
