@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdlib.h>
 #include "cjson/cJSON.h"
 
 #define CDEX_MAX_FIELDS 64
@@ -53,6 +55,14 @@ typedef struct {
     cdex_field_descriptor_t fields[CDEX_MAX_FIELDS];
 } cdex_descriptor_t;
 
+/**
+ * @brief CDEX 描述符链表的节点结构体。
+ */
+typedef struct cdex_descriptor_node {
+    cdex_descriptor_t descriptor;
+    struct cdex_descriptor_node* next;
+} cdex_descriptor_node_t;
+
 // CDEX 数据包的内存表示
 typedef struct {
     uint16_t descriptor_id;
@@ -71,14 +81,37 @@ typedef enum {
     CDEX_ERROR_INVALID_DATA,
     CDEX_ERROR_MEMORY_ALLOCATION,
     CDEX_ERROR_INDEX_OUT_OF_BOUNDS,
-    CDEX_ERROR_PACKET_FULL
+    CDEX_ERROR_PACKET_FULL,
+    CDEX_ERROR_ID_EXISTS
 } cdex_status_t;
 
 
 /**
- * @brief 初始化描述符管理器 (解析所有已知的描述符字符串)
+ * @brief 初始化描述符管理器
  */
 void cdex_manager_init(void);
+
+/**
+ * @brief 清理并释放所有已注册的描述符，防止内存泄漏
+ */
+void cdex_manager_cleanup(void);
+
+/**
+ * @brief 通过描述符字符串动态注册一个新的描述符
+ * @param id 要注册的描述符ID
+ * @param descriptor_string 描述符字符串，例如 "temp-f32,hum-u16"
+ * @return 状态码 (CDEX_SUCCESS 表示成功)
+ */
+cdex_status_t cdex_descriptor_register(uint16_t id, const char* descriptor_string);
+
+/**
+ * @brief 通过预定义的字段数组加载一个新的描述符
+ * @param id 要加载的描述符ID
+ * @param fields 指向 cdex_field_descriptor_t 数组的指针
+ * @param field_count 数组中的字段数量
+ * @return 状态码 (CDEX_SUCCESS 表示成功)
+ */
+cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_descriptor_t* fields, int field_count);
 
 /**
  * @brief 根据ID查找一个已初始化的描述符

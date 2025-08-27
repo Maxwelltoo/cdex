@@ -23,24 +23,6 @@ static uint16_t calculate_crc16(const uint8_t* data, size_t length) {
     return crc;
 }
 
-// --- 描述符管理 ---
-// 在实际应用中，这部分可以从文件或配置中加载
-#define DESCRIPTOR_COUNT 2
-static cdex_descriptor_t g_descriptors[DESCRIPTOR_COUNT];
-static bool g_manager_initialized = false;
-
-// 定义您的描述符字符串
-static const cdex_descriptor_t g_descriptor_templates[DESCRIPTOR_COUNT] = {
-    {
-        .id = 1001,
-        .raw_string = "temp-f32,humidity-u16,pressure-u32,status-u8,device_name-str"
-    },
-    {
-        .id = 2005,
-        .raw_string = "voltage-i16,current-i16,power-f32,error_code-u32,uptime-u64"
-    }
-};
-
 static cdex_data_type_t str_to_type(const char* str, size_t* size) {
     if (strcmp(str, "u8") == 0) { *size = 1; return CDEX_TYPE_U8; }
     if (strcmp(str, "i8") == 0) { *size = 1; return CDEX_TYPE_I8; }
@@ -57,46 +39,99 @@ static cdex_data_type_t str_to_type(const char* str, size_t* size) {
     return CDEX_TYPE_UNKNOWN;
 }
 
+// --- 描述符管理 ---
+static cdex_descriptor_node_t* g_descriptor_list_head = NULL;
+
 void cdex_manager_init(void) {
-    if (g_manager_initialized) return;
+    cdex_manager_cleanup();
+}
 
-    for (int i = 0; i < DESCRIPTOR_COUNT; ++i) {
-        g_descriptors[i] = g_descriptor_templates[i];
-        
-        char* str_copy = strdup(g_descriptors[i].raw_string);
-        if (!str_copy) {
-            // Handle memory allocation error
-            return;
+void cdex_manager_cleanup(void) {
+    cdex_descriptor_node_t* current = g_descriptor_list_head;
+    while (current != NULL) {
+        cdex_descriptor_node_t* next = current->next;
+        // 释放动态分配的描述符字符串
+        if (current->descriptor.raw_string) {
+            free(current->descriptor.raw_string);
         }
-
-        char* segment = strtok(str_copy, ",");
-        int field_idx = 0;
-        while (segment != NULL && field_idx < CDEX_MAX_FIELDS) {
-            char* hyphen = strrchr(segment, '-');
-            if (hyphen) {
-                *hyphen = '\0'; // Split name and type
-                strncpy(g_descriptors[i].fields[field_idx].name, segment, sizeof(g_descriptors[i].fields[field_idx].name) - 1);
-                g_descriptors[i].fields[field_idx].type = str_to_type(hyphen + 1, &g_descriptors[i].fields[field_idx].size);
-            }
-            field_idx++;
-            segment = strtok(NULL, ",");
-        }
-        g_descriptors[i].field_count = field_idx;
-        free(str_copy);
+        // 释放节点本身
+        free(current);
+        current = next;
     }
-    g_manager_initialized = true;
+    g_descriptor_list_head = NULL;
 }
 
 const cdex_descriptor_t* cdex_get_descriptor_by_id(uint16_t id) {
-    if (!g_manager_initialized) {
-        cdex_manager_init();
-    }
-    for (int i = 0; i < DESCRIPTOR_COUNT; ++i) {
-        if (g_descriptors[i].id == id) {
-            return &g_descriptors[i];
+    if (!g_descriptor_list_head) return NULL;
+    cdex_descriptor_node_t* current = g_descriptor_list_head;
+    while (current != NULL) {
+        if (current->descriptor.id == id) {
+            return &current->descriptor;
         }
+        current = current->next;
     }
     return NULL;
+}
+
+cdex_status_t cdex_descriptor_register(uint16_t id, const char* descriptor_string) {
+    if (cdex_get_descriptor_by_id(id) != NULL) {
+        return CDEX_ERROR_ID_EXISTS;
+    }
+    cdex_descriptor_node_t* new_node = (cdex_descriptor_node_t*)malloc(sizeof(cdex_descriptor_node_t));
+    if (!new_node) return CDEX_ERROR_MEMORY_ALLOCATION;
+    memset(new_node, 0, sizeof(cdex_descriptor_node_t));
+    new_node->descriptor.id = id;
+    new_node->descriptor.raw_string = strdup(descriptor_string);
+    if (!new_node->descriptor.raw_string) {
+        free(new_node);
+        return CDEX_ERROR_MEMORY_ALLOCATION;
+    }
+    // 解析字符串以填充 fields 数组
+    char* str_copy = strdup(descriptor_string);
+    if (!str_copy) {
+        free(new_node->descriptor.raw_string);
+        free(new_node);
+        return CDEX_ERROR_MEMORY_ALLOCATION;
+    }
+    char* segment = strtok(str_copy, ",");
+    int field_idx = 0;
+    while (segment != NULL && field_idx < CDEX_MAX_FIELDS) {
+        char* hyphen = strrchr(segment, '-');
+        if (hyphen) {
+            *hyphen = '\0'; // 分割名称和类型
+            strncpy(new_node->descriptor.fields[field_idx].name, segment, sizeof(new_node->descriptor.fields[field_idx].name) - 1);
+            new_node->descriptor.fields[field_idx].type = str_to_type(hyphen + 1, &new_node->descriptor.fields[field_idx].size);
+        }
+        field_idx++;
+        segment = strtok(NULL, ",");
+    }
+    new_node->descriptor.field_count = field_idx;
+    free(str_copy);
+    // 将新节点添加到链表头部
+    new_node->next = g_descriptor_list_head;
+    g_descriptor_list_head = new_node;
+    return CDEX_SUCCESS;
+}
+
+cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_descriptor_t* fields, int field_count) {
+    if (cdex_get_descriptor_by_id(id) != NULL) {
+        return CDEX_ERROR_ID_EXISTS;
+    }
+    if (field_count > CDEX_MAX_FIELDS) {
+        return CDEX_ERROR_INDEX_OUT_OF_BOUNDS;
+    }
+    cdex_descriptor_node_t* new_node = (cdex_descriptor_node_t*)malloc(sizeof(cdex_descriptor_node_t));
+    if (!new_node) return CDEX_ERROR_MEMORY_ALLOCATION;
+    memset(new_node, 0, sizeof(cdex_descriptor_node_t));
+    new_node->descriptor.id = id;
+    new_node->descriptor.field_count = field_count;
+    new_node->descriptor.raw_string = NULL; // 没有原始字符串
+    memcpy(new_node->descriptor.fields, fields, field_count * sizeof(cdex_field_descriptor_t));
+    
+    // 将新节点添加到链表头部
+    new_node->next = g_descriptor_list_head;
+    g_descriptor_list_head = new_node;
+    return CDEX_SUCCESS;
 }
 
 static int count_set_bits_before(uint64_t n, int index) {
