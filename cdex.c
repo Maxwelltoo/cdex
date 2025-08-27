@@ -113,7 +113,7 @@ cdex_status_t cdex_descriptor_register(uint16_t id, const char* descriptor_strin
     return CDEX_SUCCESS;
 }
 
-cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_descriptor_t* fields, int field_count) {
+cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_t* fields, int field_count) {
     if (cdex_get_descriptor_by_id(id) != NULL) {
         return CDEX_ERROR_ID_EXISTS;
     }
@@ -126,7 +126,7 @@ cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_descriptor_t* f
     new_node->descriptor.id = id;
     new_node->descriptor.field_count = field_count;
     new_node->descriptor.raw_string = NULL; // 没有原始字符串
-    memcpy(new_node->descriptor.fields, fields, field_count * sizeof(cdex_field_descriptor_t));
+    memcpy(new_node->descriptor.fields, fields, field_count * sizeof(cdex_field_t));
     
     // 将新节点添加到链表头部
     new_node->next = g_descriptor_list_head;
@@ -223,7 +223,7 @@ int cdex_packet_calculate_packed_size(const cdex_packet_t* packet) {
     int data_idx = 0;
     for (int i = 0; i < desc->field_count; ++i) {
         if ((packet->bitmap >> i) & 1) {
-            const cdex_field_descriptor_t* field_desc = &desc->fields[i];
+            const cdex_field_t* field_desc = &desc->fields[i];
             const cdex_value_t* value = &packet->values[data_idx];
 
             switch (field_desc->type) {
@@ -266,7 +266,7 @@ int cdex_pack(const cdex_packet_t* packet, uint8_t* buffer, size_t buffer_size) 
     int data_idx = 0;
     for (int i = 0; i < desc->field_count; ++i) {
         if ((packet->bitmap >> i) & 1) {
-            const cdex_field_descriptor_t* field_desc = &desc->fields[i];
+            const cdex_field_t* field_desc = &desc->fields[i];
             const cdex_value_t* value = &packet->values[data_idx];
             
             if (field_desc->type == CDEX_TYPE_STR) {
@@ -322,7 +322,7 @@ cdex_status_t cdex_parse(const uint8_t* buffer, size_t buffer_len, cdex_packet_t
     int data_idx = 0;
     for (int i = 0; i < desc->field_count; ++i) {
         if ((packet_out->bitmap >> i) & 1) {
-            const cdex_field_descriptor_t* field_desc = &desc->fields[i];
+            const cdex_field_t* field_desc = &desc->fields[i];
             cdex_value_t* value_out = &packet_out->values[data_idx];
 
             if (field_desc->type == CDEX_TYPE_STR) {
@@ -363,7 +363,7 @@ cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
     int data_idx = 0;
     for (int i = 0; i < desc->field_count; ++i) {
         if ((packet->bitmap >> i) & 1) {
-            const cdex_field_descriptor_t* field_desc = &desc->fields[i];
+            const cdex_field_t* field_desc = &desc->fields[i];
             const cdex_value_t* value = &packet->values[data_idx];
             
             switch (field_desc->type) {

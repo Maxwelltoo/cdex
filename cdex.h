@@ -43,7 +43,7 @@ typedef struct {
     char name[CDEX_FIELD_NAME_LEN];
     cdex_data_type_t type;
     size_t size;
-} cdex_field_descriptor_t;
+} cdex_field_t;
 
 /**
  * @brief 完整的 CDEX 描述符信息
@@ -52,7 +52,7 @@ typedef struct {
     uint16_t id;
     char* raw_string;
     int field_count;
-    cdex_field_descriptor_t fields[CDEX_MAX_FIELDS];
+    cdex_field_t fields[CDEX_MAX_FIELDS];
 } cdex_descriptor_t;
 
 /**
@@ -107,11 +107,11 @@ cdex_status_t cdex_descriptor_register(uint16_t id, const char* descriptor_strin
 /**
  * @brief 通过预定义的字段数组加载一个新的描述符
  * @param id 要加载的描述符ID
- * @param fields 指向 cdex_field_descriptor_t 数组的指针
+ * @param fields 指向 cdex_field_t 数组的指针
  * @param field_count 数组中的字段数量
  * @return 状态码 (CDEX_SUCCESS 表示成功)
  */
-cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_descriptor_t* fields, int field_count);
+cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_t* fields, int field_count);
 
 /**
  * @brief 根据ID查找一个已初始化的描述符
