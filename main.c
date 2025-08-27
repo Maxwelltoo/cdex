@@ -24,7 +24,7 @@ int main() {
     printf("--- 1. Registering Descriptors ---\n");
 
     // 方法 A: 通过字符串注册
-    const char* sensor_desc_str = "temp-f32,humidity-u16,pressure-u32,status-u8,device_name-str";
+    const char* sensor_desc_str = "temp:f32,humidity:u16,pressure:u32,status:u8,device_name:str";
     cdex_status_t reg_status = cdex_descriptor_register(1001, sensor_desc_str);
     if (reg_status == CDEX_SUCCESS) {
         printf("Successfully registered descriptor ID 1001 from string.\n");
@@ -34,7 +34,7 @@ int main() {
     }
 
     // 方法 B: 通过预定义结构体数组加载
-    cdex_field_descriptor_t power_fields[] = {
+    cdex_field_t power_fields[] = {
         {"voltage", CDEX_TYPE_I16, 2},
         {"current", CDEX_TYPE_I16, 2},
         {"power", CDEX_TYPE_F32, 4},
@@ -88,7 +88,7 @@ int main() {
         
         free(json_string);
         cJSON_Delete(json_obj);
-        cdex_free_packet_strings(&parsed_packet);
+        cdex_free_packet_memory(&parsed_packet);
     } else {
         printf("Parsing failed with code %d\n", parse_status);
     }

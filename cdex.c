@@ -96,7 +96,7 @@ cdex_status_t cdex_descriptor_register(uint16_t id, const char* descriptor_strin
     char* segment = strtok(str_copy, ",");
     int field_idx = 0;
     while (segment != NULL && field_idx < CDEX_MAX_FIELDS) {
-        char* hyphen = strrchr(segment, '-');
+        char* hyphen = strrchr(segment, ':');
         if (hyphen) {
             *hyphen = '\0'; // 分割名称和类型
             strncpy(new_node->descriptor.fields[field_idx].name, segment, sizeof(new_node->descriptor.fields[field_idx].name) - 1);
