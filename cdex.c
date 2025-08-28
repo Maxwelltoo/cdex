@@ -170,7 +170,7 @@ cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_t* fields, int 
     new_node->descriptor.field_count = field_count;
     new_node->descriptor.raw_string = NULL; // 没有原始字符串
     memcpy(new_node->descriptor.fields, fields, field_count * sizeof(cdex_field_t));
-    
+
     // 将新节点添加到链表头部
     new_node->next = g_descriptor_list_head;
     g_descriptor_list_head = new_node;
@@ -212,13 +212,13 @@ cdex_status_t cdex_packet_push(cdex_packet_t* packet, int field_index, cdex_valu
         if (packet->data_count >= CDEX_MAX_FIELDS) return CDEX_ERROR_PACKET_FULL;
 
         // 为新元素腾出空间，将插入点之后的所有元素向后移动一位
-        memmove(&packet->values[insertion_index + 1], 
-                &packet->values[insertion_index], 
+        memmove(&packet->values[insertion_index + 1],
+                &packet->values[insertion_index],
                 (packet->data_count - insertion_index) * sizeof(cdex_value_t));
 
         // 插入新值
         packet->values[insertion_index] = value;
-        
+
         // 更新 bitmap 和计数
         packet->bitmap |= (1ULL << field_index);
         packet->data_count++;
@@ -240,8 +240,8 @@ cdex_status_t cdex_packet_pop(cdex_packet_t* packet, int field_index) {
     int removal_index = count_set_bits_before(packet->bitmap, field_index);
 
     // 将移除点之后的所有元素向前移动一位，覆盖被删除的元素
-    memmove(&packet->values[removal_index], 
-            &packet->values[removal_index + 1], 
+    memmove(&packet->values[removal_index],
+            &packet->values[removal_index + 1],
             (packet->data_count - removal_index - 1) * sizeof(cdex_value_t));
 
     // 更新 bitmap 和计数
@@ -301,7 +301,7 @@ int cdex_pack(const cdex_packet_t* packet, uint8_t* buffer, size_t buffer_size) 
     size_t bitmap_bytes = (desc->field_count + 7) / 8;
 
     uint8_t* ptr = buffer;
-    
+
     // 1. 写入Descriptor ID (小端)
     if (ptr + 2 > buffer + buffer_size) return -1;
     *(uint16_t*)ptr = packet->descriptor_id;
@@ -318,7 +318,7 @@ int cdex_pack(const cdex_packet_t* packet, uint8_t* buffer, size_t buffer_size) 
         if ((packet->bitmap >> i) & 1) {
             const cdex_field_t* field_desc = &desc->fields[i];
             const cdex_value_t* value = &packet->values[data_idx];
-            
+
             if (field_desc->type == CDEX_TYPE_STR) {
                 size_t str_len = strlen(value->str) + 1; // +1 for null terminator
                 if (ptr + str_len > buffer + buffer_size) return -1;
@@ -432,7 +432,7 @@ cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
 
     cJSON* root = cJSON_CreateObject();
     if (!root) return NULL;
-    
+
     // 添加一个元数据字段，便于调试
     cJSON_AddNumberToObject(root, "_descriptor_id", packet->descriptor_id);
 
@@ -441,7 +441,7 @@ cJSON* cdex_packet_to_json(const cdex_packet_t* packet) {
         if ((packet->bitmap >> i) & 1) {
             const cdex_field_t* field_desc = &desc->fields[i];
             const cdex_value_t* value = &packet->values[data_idx];
-            
+
             switch (field_desc->type) {
                 case CDEX_TYPE_U8:  cJSON_AddNumberToObject(root, field_desc->name, value->u8); break;
                 case CDEX_TYPE_I8:  cJSON_AddNumberToObject(root, field_desc->name, value->i8); break;

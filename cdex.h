@@ -10,7 +10,9 @@
 #define CDEX_MAX_FIELDS 64
 #define CDEX_FIELD_NAME_LEN 32
 
-// 数据类型枚举
+/**
+ * @brief 可用的 CDEX 数据类型枚举
+ */
 typedef enum {
     CDEX_TYPE_U8, CDEX_TYPE_I8,
     CDEX_TYPE_U16, CDEX_TYPE_I16,
@@ -23,7 +25,9 @@ typedef enum {
     CDEX_TYPE_UNKNOWN
 } cdex_data_type_t;
 
-// 用于存储任意类型值的联合体
+/**
+ * @brief 保存不同数据类型的通用联合体类型
+ */
 typedef union {
     uint8_t u8;
     int8_t i8;
@@ -67,7 +71,9 @@ typedef struct cdex_descriptor_node {
     struct cdex_descriptor_node* next;
 } cdex_descriptor_node_t;
 
-// CDEX 数据包的内存表示
+/**
+ * @brief CDEX 数据包的结构体
+ */
 typedef struct {
     uint16_t descriptor_id;
     uint64_t bitmap;
@@ -75,7 +81,9 @@ typedef struct {
     cdex_value_t values[CDEX_MAX_FIELDS]; // 按bitmap顺序存放数据
 } cdex_packet_t;
 
-// 错误码
+/**
+ * @brief CDEX 状态码
+ */
 typedef enum {
     CDEX_SUCCESS = 0,
     CDEX_ERROR_BUFFER_TOO_SMALL,
