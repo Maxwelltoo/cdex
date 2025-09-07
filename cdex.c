@@ -42,6 +42,25 @@ static cdex_data_type_t str_to_type(const char* str, size_t* size) {
     return CDEX_TYPE_UNKNOWN;
 }
 
+static char *type_to_str(cdex_data_type_t type) {
+    switch (type) {
+        case CDEX_TYPE_U8: return "u8";
+        case CDEX_TYPE_I8: return "i8";
+        case CDEX_TYPE_U16: return "u16";
+        case CDEX_TYPE_I16: return "i16";
+        case CDEX_TYPE_U32: return "u32";
+        case CDEX_TYPE_I32: return "i32";
+        case CDEX_TYPE_U64: return "u64";
+        case CDEX_TYPE_I64: return "i64";
+        case CDEX_TYPE_F32: return "f32";
+        case CDEX_TYPE_D64: return "d64";
+        case CDEX_TYPE_NUM: return "num";
+        case CDEX_TYPE_BIN: return "bin";
+        case CDEX_TYPE_STR: return "str";
+        default: return "unknown";
+    }
+}
+
 static uint64_t zigzag_encode_64(int64_t n) { return (n << 1) ^ (n >> 63); }
 
 static int64_t zigzag_decode_64(uint64_t n) { return (n >> 1) ^ (-(int64_t)(n & 1)); }
@@ -174,6 +193,64 @@ cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_t* fields, int 
     // 将新节点添加到链表头部
     new_node->next = g_descriptor_list_head;
     g_descriptor_list_head = new_node;
+    return CDEX_SUCCESS;
+}
+
+code_status_t cdex_fields_to_string(char *buf, size_t buf_size, const cdex_field_t *fields, int field_count) {
+    if (!buf || buf_size == 0 || !fields || field_count <= 0 || field_count > CDEX_MAX_FIELDS) {
+        return CDEX_ERROR_INVALID_DATA;
+    }
+
+    size_t offset = 0;
+    for (int i = 0; i < field_count; ++i) {
+        char *type_str = type_to_str(fields[i].type);
+        if (strcmp(type_str, "unknown") == 0) {
+            return CDEX_ERROR_INVALID_DATA;
+        }
+
+        int written = snprintf(buf + offset, buf_size - offset, "%s:%s", fields[i].name, type_str);
+        if (written < 0 || (size_t)written >= buf_size - offset) {
+            return CDEX_ERROR_BUFFER_TOO_SMALL;
+        }
+        offset += written;
+        if (i < field_count - 1) {
+            if (offset < buf_size - 1) {
+                buf[offset++] = ',';
+                buf[offset] = '\0';
+            } else {
+                return CDEX_ERROR_BUFFER_TOO_SMALL;
+            }
+        }
+    }
+    return CDEX_SUCCESS;
+}
+
+code_status_t cdex_string_to_fields(const char *str, cdex_field_t *fields, int *field_count) {
+    if (!str || !fields || !field_count || *field_count <= 0) {
+        return CDEX_ERROR_INVALID_DATA;
+    }
+
+    char *str_copy = strdup(str);
+    if (!str_copy) {
+        return CDEX_ERROR_MEMORY_ALLOCATION;
+    }
+
+    char *segment = strtok(str_copy, ",");
+    int count = 0;
+
+    while (segment != NULL && count < *field_count) {
+        char *hyphen = strrchr(segment, ':');
+        if (hyphen) {
+            *hyphen = '\0'; // 分割名称和类型
+            strncpy(fields[count].name, segment, sizeof(fields[count].name) - 1);
+            fields[count].type = str_to_type(hyphen + 1, &fields[count].size);
+            count++;
+        }
+        segment = strtok(NULL, ",");
+    }
+
+    free(str_copy);
+    *field_count = count;
     return CDEX_SUCCESS;
 }
 
