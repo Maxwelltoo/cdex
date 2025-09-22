@@ -196,7 +196,7 @@ cdex_status_t cdex_descriptor_load(uint16_t id, const cdex_field_t* fields, int 
     return CDEX_SUCCESS;
 }
 
-code_status_t cdex_fields_to_string(char *buf, size_t buf_size, const cdex_field_t *fields, int field_count) {
+cdex_status_t cdex_fields_to_string(char *buf, size_t buf_size, const cdex_field_t *fields, int field_count) {
     if (!buf || buf_size == 0 || !fields || field_count <= 0 || field_count > CDEX_MAX_FIELDS) {
         return CDEX_ERROR_INVALID_DATA;
     }
@@ -225,7 +225,7 @@ code_status_t cdex_fields_to_string(char *buf, size_t buf_size, const cdex_field
     return CDEX_SUCCESS;
 }
 
-code_status_t cdex_string_to_fields(const char *str, cdex_field_t *fields, int *field_count) {
+cdex_status_t cdex_string_to_fields(const char *str, cdex_field_t *fields, int *field_count) {
     if (!str || !fields || !field_count || *field_count <= 0) {
         return CDEX_ERROR_INVALID_DATA;
     }
